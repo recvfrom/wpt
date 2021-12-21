@@ -814,3 +814,9 @@ SET TIMEOUT: editing/crashtests/inserthtml-in-text-adopted-to-other-document.htm
 SET TIMEOUT: editing/crashtests/insertorderedlist-in-text-adopted-to-other-document.html
 SET TIMEOUT: editing/crashtests/make-editable-div-inline-and-set-contenteditable-of-input-to-false.html
 SET TIMEOUT: editing/crashtests/outdent-across-svg-boundary.html
+
+# Markup based client hint delegation to third-parties requires hard coded URLs
+WEB-PLATFORM.TEST:client-hints/accept-ch-stickiness/meta-name-cross-origin-iframe-with-hints.https.html
+WEB-PLATFORM.TEST:client-hints/accept-ch-stickiness/meta-name-cross-origin-iframe-without-hints.https.html
+WEB-PLATFORM.TEST:client-hints/accept-ch-stickiness/meta-name-cross-origin-subresource-with-hints.https.html
+WEB-PLATFORM.TEST:client-hints/accept-ch-stickiness/meta-name-cross-origin-subresource-without-hints.https.html
