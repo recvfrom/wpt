@@ -1,0 +1,101 @@
+<!doctype html>
+<meta charset=utf-8>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/common/dispatcher/dispatcher.js"></script>
+<script src="/common/get-host-info.sub.js"></script>
+<script src="/common/utils.js"></script>
+<div id=log></div>
+
+<script>
+const script = `
+    <script>
+      top.postMessage({event: "loaded", type: location.protocol}, "*");
+    <\/script>`;
+
+const test_cases = [
+    {name: "data", url: encodeURI(`data:text/html,${script}`)},
+    {name: "blob", url: URL.createObjectURL(new Blob([script], { type: "text/html" }))},
+    {name: "about", url: "about:blank"},
+  ];
+
+const observeReports = async (frame, expected_count) => {
+  const reports = [];
+
+  await new Promise(resolve => {
+    const observer = new frame.contentWindow.ReportingObserver((rs) => {
+      reports.push(...rs.map(r => r.toJSON()));
+      if (expected_count <= reports.length){
+        resolve();
+      }
+    });
+    // Limit the wait for reports, avoiding a test timeout should some reports
+    // be missing.
+    step_timeout(resolve, 2000);
+    observer.observe();
+  });
+  // Wait to catch additionnal unexpected reports.
+  await new Promise(resolve => step_timeout(resolve, 2000));
+  return reports;
+};
+
+promise_test(async t => {
+  const this_window_token = token();
+
+  // Expect the nested frame to not load, since they inherit COEP: none from the
+  // top frame, which is incompatible with first_frame's COEP: require-corp.
+  addEventListener("message", event => {
+    if(event.data.event == "loaded")
+      assert_unreached(`Nested ${event.data.type} loaded!`);
+  });
+
+  // Create an iframe with COEP: require-corp
+  const first_iframe = document.createElement("iframe");
+  t.add_cleanup( () => first_iframe.remove() );
+  first_iframe.src = "/common/blank.html?pipe=header(cross-origin-embedder-policy,require-corp)";
+  let iframe_load_promise = new Promise( resolve => first_iframe.addEventListener("load", resolve) );
+
+  document.body.append(first_iframe);
+  await iframe_load_promise;
+
+  // Create nested frames, that initially navigates to blank.html and have COEP: require-corp.
+  const nested_frames = {};
+  const nested_frames_promises = [];
+  test_cases.forEach(test => {
+    nested_frame = document.createElement("iframe");
+    nested_frame.src = "/common/blank.html?pipe=header(cross-origin-embedder-policy,require-corp)";
+    nested_frame.name = `nested_frame_${test.name}`;
+    t.add_cleanup( () => nested_frame.remove() );
+    nested_frames_promises.push(new Promise( resolve => nested_frame.addEventListener("load", resolve) ) );
+    first_iframe.contentDocument.body.append(nested_frame);
+    nested_frames[test.name] = nested_frame;
+  });
+
+  await Promise.all(nested_frames_promises);
+
+  const reportPromise = observeReports(first_iframe, test_cases.length);
+
+  // Navigate nested frames to a local scheme document. COEP should be inherited
+  // from the initiator or creator (top in both cases), this results in COEP
+  // being none and the documents not being allowed to load under the
+  // COEP: require-corp iframe (first_iframe).
+  test_cases.forEach(test => {
+    // Top navigates nested_frame_[test.name] to a test.url
+    const frame = nested_frames[test.name];
+    const opened_window = window.open(test.url, frame.name);
+    assert_equals(opened_window, frame.contentWindow);
+  });
+
+  // Wait and validate reports.
+  const reports = await reportPromise;
+  assert_equals(reports.length, test_cases.length);
+  test_cases.forEach(test => {
+    assert_true(reports.some( report => {
+      return report.type == 'coep' &&
+      report.body.type == 'navigation' &&
+      report.body.blockedURL == test.url;
+    }), `No report matched for test "${test.name}"`);
+  });
+
+}, "Prevent local scheme documents from loading within a COEP: require-corp iframe if they inherit COEP: none");
+</script>
